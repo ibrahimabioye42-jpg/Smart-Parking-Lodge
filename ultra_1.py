@@ -7,27 +7,6 @@ import os
 # ==========================================================
 #                  SMART PARKING SYSTEM
 # ==========================================================
-#
-# SLOT 1
-# Trigger -> GPIO 18
-# Echo    -> GPIO 17
-# Red     -> GPIO 27
-# Green   -> GPIO 22
-# Buzzer  -> GPIO 26
-#
-# SLOT 2
-# Trigger -> GPIO 21
-# Echo    -> GPIO 20
-# Red     -> GPIO 23
-# Green   -> GPIO 24
-# Buzzer  -> GPIO 19
-#
-# MAIN GATE
-# Trigger -> GPIO 6
-# Echo    -> GPIO 13
-# Servo   -> GPIO 5
-#
-# ==========================================================
 
 
 # ==========================================================
@@ -41,23 +20,23 @@ RATE_PER_MINUTE = 1.00       # GH₵1.00 per minute
 # PARKING SLOT DISTANCES
 # ==========================================================
 
-TOO_CLOSE_DISTANCE = 4       # Below 4 cm
-CLOSE_DISTANCE = 15          # 4 - <15 cm
-FAR_DISTANCE = 25            # 15 - 25 cm
+TOO_CLOSE_DISTANCE = 4
+CLOSE_DISTANCE = 15
+FAR_DISTANCE = 25
 
 
 # ==========================================================
 # MAIN GATE DETECTION
 # ==========================================================
 
-GATE_DETECT_DISTANCE = 40   # Vehicle detected at <= 40 cm
+GATE_DETECT_DISTANCE = 20
 
 
 # ==========================================================
 # MAIN GATE OPEN TIME
 # ==========================================================
 
-GATE_CLOSE_DELAY = 30       # Gate closes 30 seconds after opening
+GATE_CLOSE_DELAY = 10
 
 
 # ==========================================================
@@ -119,7 +98,7 @@ GATE_SENSOR = DistanceSensor(
 
 
 # ==========================================================
-# SG90 SERVO
+# MG90S SERVO
 # ==========================================================
 
 GATE_SERVO = AngularServo(
@@ -144,11 +123,9 @@ GATE_CLOSED_ANGLE = 180
 # ==========================================================
 
 slot1_distance = 0
-
 slot1_state = "FREE"
 
 slot1_car_present = False
-
 slot1_start_time = None
 
 slot1_was_occupied = False
@@ -159,14 +136,53 @@ slot1_was_occupied = False
 # ==========================================================
 
 slot2_distance = 0
-
 slot2_state = "FREE"
 
 slot2_car_present = False
-
 slot2_start_time = None
 
 slot2_was_occupied = False
+
+
+# ==========================================================
+# NEW:
+# INCOMING CAR SLOT ASSIGNMENT
+# ==========================================================
+#
+# These variables are different from car_present.
+#
+# RESERVED means:
+# "This slot has been assigned to an incoming car,
+#  but the car has not reached the parking sensor yet."
+#
+# This prevents another incoming car from receiving
+# the same parking slot.
+#
+
+
+slot1_reserved = False
+slot2_reserved = False
+
+
+# ==========================================================
+# WHICH SLOT WAS ASSIGNED TO THE INCOMING CAR?
+# ==========================================================
+
+assigned_slot = None
+
+
+# ==========================================================
+# PREVENT REPEATED ASSIGNMENT
+# ==========================================================
+#
+# When a car remains in front of the main gate sensor,
+# the loop runs many times per second.
+#
+# We therefore need to know whether this car has
+# already been assigned a parking slot.
+#
+
+incoming_car_assigned = False
 
 
 # ==========================================================
@@ -177,7 +193,6 @@ gate_distance = 0
 
 gate_is_open = False
 
-# Time when the gate opened
 gate_open_time = None
 
 
@@ -200,6 +215,171 @@ def clear_screen():
 
 
 # ==========================================================
+# FIND A FREE PARKING SLOT
+# ==========================================================
+
+def find_free_slot():
+
+    # ------------------------------------------------------
+    # SLOT 1
+    # ------------------------------------------------------
+
+    if (
+        not slot1_car_present
+        and
+        not slot1_reserved
+    ):
+
+        return 1
+
+
+    # ------------------------------------------------------
+    # SLOT 2
+    # ------------------------------------------------------
+
+    if (
+        not slot2_car_present
+        and
+        not slot2_reserved
+    ):
+
+        return 2
+
+
+    # ------------------------------------------------------
+    # NO SLOT
+    # ------------------------------------------------------
+
+    return None
+
+
+# ==========================================================
+# ASSIGN PARKING SLOT TO INCOMING CAR
+# ==========================================================
+
+def assign_parking_slot():
+
+    global slot1_reserved
+    global slot2_reserved
+    global assigned_slot
+    global incoming_car_assigned
+
+
+    # ------------------------------------------------------
+    # Do not assign twice to the same incoming vehicle
+    # ------------------------------------------------------
+
+    if incoming_car_assigned:
+
+        return assigned_slot
+
+
+    # ------------------------------------------------------
+    # Find free slot
+    # ------------------------------------------------------
+
+    free_slot = find_free_slot()
+
+
+    # ------------------------------------------------------
+    # NO FREE SLOT
+    # ------------------------------------------------------
+
+    if free_slot is None:
+
+        print()
+        print("==============================================")
+        print("           PARKING FULL")
+        print("==============================================")
+        print("Incoming vehicle was NOT assigned a slot.")
+        print()
+
+        return None
+
+
+    # ======================================================
+    # ASSIGN SLOT 1
+    # ======================================================
+
+    if free_slot == 1:
+
+        slot1_reserved = True
+
+        assigned_slot = 1
+
+
+    # ======================================================
+    # ASSIGN SLOT 2
+    # ======================================================
+
+    elif free_slot == 2:
+
+        slot2_reserved = True
+
+        assigned_slot = 2
+
+
+    # ======================================================
+    # SAVE ASSIGNMENT
+    # ======================================================
+
+    incoming_car_assigned = True
+
+
+    print()
+    print("==============================================")
+    print("        INCOMING VEHICLE ASSIGNED")
+    print("==============================================")
+
+    print(
+        f"Assigned parking slot : SLOT {assigned_slot}"
+    )
+
+    print("Gate                  : OPEN")
+
+    print("==============================================")
+    print()
+
+
+    return assigned_slot
+
+
+# ==========================================================
+# CLEAR INCOMING ASSIGNMENT
+# ==========================================================
+#
+# This is called when the incoming vehicle reaches
+# its assigned slot.
+#
+# The reservation changes into actual occupancy.
+#
+
+
+def confirm_slot_arrival(slot_number):
+
+    global slot1_reserved
+    global slot2_reserved
+    global assigned_slot
+    global incoming_car_assigned
+
+
+    if slot_number == 1:
+
+        slot1_reserved = False
+
+
+    elif slot_number == 2:
+
+        slot2_reserved = False
+
+
+    # Assignment has now become actual parking
+    assigned_slot = None
+
+    incoming_car_assigned = False
+
+
+# ==========================================================
 # OPEN MAIN GATE
 # ==========================================================
 
@@ -207,6 +387,7 @@ def open_gate():
 
     global gate_is_open
     global gate_open_time
+
 
     # ------------------------------------------------------
     # Only open if currently closed
@@ -218,7 +399,7 @@ def open_gate():
 
         gate_is_open = True
 
-        # Start 30-second timer immediately
+        # Start gate timer immediately
         gate_open_time = time()
 
 
@@ -231,6 +412,7 @@ def close_gate():
     global gate_is_open
     global gate_open_time
 
+
     if gate_is_open:
 
         GATE_SERVO.angle = GATE_CLOSED_ANGLE
@@ -241,18 +423,40 @@ def close_gate():
 
 
 # ==========================================================
-# NUMBER OF FREE SLOTS
+# NUMBER OF AVAILABLE SLOTS
 # ==========================================================
+#
+# IMPORTANT:
+#
+# A reserved slot is NOT considered free.
+#
+# This prevents an incoming car from being assigned
+# the same slot as another incoming car.
+#
+
 
 def available_slot_count():
 
     count = 0
 
-    if not slot1_car_present:
+
+    if (
+        not slot1_car_present
+        and
+        not slot1_reserved
+    ):
+
         count += 1
 
-    if not slot2_car_present:
+
+    if (
+        not slot2_car_present
+        and
+        not slot2_reserved
+    ):
+
         count += 1
+
 
     return count
 
@@ -264,9 +468,15 @@ def available_slot_count():
 def get_parking_minutes(start_time):
 
     if start_time is None:
+
         return 0
 
-    elapsed_seconds = time() - start_time
+
+    elapsed_seconds = (
+        time() -
+        start_time
+    )
+
 
     return elapsed_seconds / 60
 
@@ -277,9 +487,15 @@ def get_parking_minutes(start_time):
 
 def get_current_charge(start_time):
 
-    minutes = get_parking_minutes(start_time)
+    minutes = get_parking_minutes(
+        start_time
+    )
 
-    return minutes * RATE_PER_MINUTE
+
+    return (
+        minutes *
+        RATE_PER_MINUTE
+    )
 
 
 # ==========================================================
@@ -294,8 +510,16 @@ def update_slot1():
     global slot1_start_time
     global slot1_was_occupied
 
-    # Read sensor
-    distance = SLOT1_SENSOR.distance * 100
+
+    # ------------------------------------------------------
+    # READ SENSOR
+    # ------------------------------------------------------
+
+    distance = (
+        SLOT1_SENSOR.distance *
+        100
+    )
+
 
     slot1_distance = distance
 
@@ -308,10 +532,8 @@ def update_slot1():
 
         slot1_state = "TOO CLOSE"
 
-        # Green OFF
         SLOT1_GREEN.off()
 
-        # Buzzer ON
         SLOT1_BUZZER.on()
 
 
@@ -323,13 +545,10 @@ def update_slot1():
 
         slot1_state = "PARKED"
 
-        # Red ON
         SLOT1_RED.on()
 
-        # Green OFF
         SLOT1_GREEN.off()
 
-        # Buzzer OFF
         SLOT1_BUZZER.off()
 
 
@@ -341,13 +560,10 @@ def update_slot1():
 
         slot1_state = "CAR DETECTED"
 
-        # Red OFF
         SLOT1_RED.off()
 
-        # Green ON
         SLOT1_GREEN.on()
 
-        # Buzzer OFF
         SLOT1_BUZZER.off()
 
 
@@ -367,7 +583,7 @@ def update_slot1():
 
 
     # ======================================================
-    # VEHICLE ENTERED SLOT
+    # VEHICLE ENTERED SLOT 1
     # ======================================================
 
     if distance <= FAR_DISTANCE:
@@ -381,13 +597,25 @@ def update_slot1():
             slot1_was_occupied = True
 
 
+            # ----------------------------------------------
+            # IF THIS WAS THE ASSIGNED INCOMING CAR
+            # ----------------------------------------------
+
+            if (
+                assigned_slot == 1
+            ):
+
+                confirm_slot_arrival(1)
+
+
     # ======================================================
-    # VEHICLE LEFT SLOT
+    # VEHICLE LEFT SLOT 1
     # ======================================================
 
     elif distance > FAR_DISTANCE:
 
         if slot1_car_present:
+
 
             # ----------------------------------------------
             # CALCULATE PARKING TIME
@@ -398,8 +626,10 @@ def update_slot1():
                 slot1_start_time
             )
 
+
             elapsed_minutes = (
-                elapsed_seconds / 60
+                elapsed_seconds /
+                60
             )
 
 
@@ -414,14 +644,16 @@ def update_slot1():
 
 
             # ----------------------------------------------
-            # PAYMENT MESSAGE
+            # PAYMENT
             # ----------------------------------------------
 
             print()
 
             print("=" * 55)
 
-            print("                  SLOT 1 PAYMENT")
+            print(
+                "                  SLOT 1 PAYMENT"
+            )
 
             print("=" * 55)
 
@@ -455,12 +687,33 @@ def update_slot1():
 
 
             # ----------------------------------------------
-            # OPEN GATE FOR EXITING VEHICLE
+            # OUTGOING CAR
             # ----------------------------------------------
+            #
+            # IMPORTANT:
+            #
+            # This opens the gate for EXIT.
+            #
+            # It DOES NOT assign another parking slot.
+            #
 
             if slot1_was_occupied:
 
+                print(
+                    ">>> SLOT 1 EXIT VEHICLE"
+                )
+
+                print(
+                    ">>> NO PARKING SLOT ASSIGNED"
+                )
+
+                print(
+                    ">>> OPENING MAIN GATE"
+                )
+
+
                 open_gate()
+
 
                 slot1_was_occupied = False
 
@@ -477,8 +730,16 @@ def update_slot2():
     global slot2_start_time
     global slot2_was_occupied
 
-    # Read sensor
-    distance = SLOT2_SENSOR.distance * 100
+
+    # ------------------------------------------------------
+    # READ SENSOR
+    # ------------------------------------------------------
+
+    distance = (
+        SLOT2_SENSOR.distance *
+        100
+    )
+
 
     slot2_distance = distance
 
@@ -542,7 +803,7 @@ def update_slot2():
 
 
     # ======================================================
-    # VEHICLE ENTERED SLOT
+    # VEHICLE ENTERED SLOT 2
     # ======================================================
 
     if distance <= FAR_DISTANCE:
@@ -556,13 +817,25 @@ def update_slot2():
             slot2_was_occupied = True
 
 
+            # ----------------------------------------------
+            # IF THIS WAS THE ASSIGNED INCOMING CAR
+            # ----------------------------------------------
+
+            if (
+                assigned_slot == 2
+            ):
+
+                confirm_slot_arrival(2)
+
+
     # ======================================================
-    # VEHICLE LEFT SLOT
+    # VEHICLE LEFT SLOT 2
     # ======================================================
 
     elif distance > FAR_DISTANCE:
 
         if slot2_car_present:
+
 
             # ----------------------------------------------
             # CALCULATE PARKING TIME
@@ -573,8 +846,10 @@ def update_slot2():
                 slot2_start_time
             )
 
+
             elapsed_minutes = (
-                elapsed_seconds / 60
+                elapsed_seconds /
+                60
             )
 
 
@@ -589,14 +864,16 @@ def update_slot2():
 
 
             # ----------------------------------------------
-            # PAYMENT MESSAGE
+            # PAYMENT
             # ----------------------------------------------
 
             print()
 
             print("=" * 55)
 
-            print("                  SLOT 2 PAYMENT")
+            print(
+                "                  SLOT 2 PAYMENT"
+            )
 
             print("=" * 55)
 
@@ -630,12 +907,31 @@ def update_slot2():
 
 
             # ----------------------------------------------
-            # OPEN GATE FOR EXITING VEHICLE
+            # OUTGOING CAR
             # ----------------------------------------------
+            #
+            # IMPORTANT:
+            #
+            # No new slot is assigned.
+            #
 
             if slot2_was_occupied:
 
+                print(
+                    ">>> SLOT 2 EXIT VEHICLE"
+                )
+
+                print(
+                    ">>> NO PARKING SLOT ASSIGNED"
+                )
+
+                print(
+                    ">>> OPENING MAIN GATE"
+                )
+
+
                 open_gate()
+
 
                 slot2_was_occupied = False
 
@@ -648,12 +944,18 @@ def update_gate():
 
     global gate_distance
     global gate_open_time
+    global incoming_car_assigned
+
 
     # ------------------------------------------------------
-    # READ MAIN GATE SENSOR
+    # READ SENSOR
     # ------------------------------------------------------
 
-    distance = GATE_SENSOR.distance * 100
+    distance = (
+        GATE_SENSOR.distance *
+        100
+    )
+
 
     gate_distance = distance
 
@@ -664,23 +966,51 @@ def update_gate():
 
     if distance <= GATE_DETECT_DISTANCE:
 
-        # Open immediately
-        open_gate()
+
+        # --------------------------------------------------
+        # INCOMING VEHICLE
+        # --------------------------------------------------
+        #
+        # Only assign a parking slot if this vehicle
+        # has not already been assigned one.
+        #
+
+        if not incoming_car_assigned:
+
+
+            # ----------------------------------------------
+            # ASSIGN A FREE SLOT
+            # ----------------------------------------------
+
+            assigned = (
+                assign_parking_slot()
+            )
+
+
+            # ----------------------------------------------
+            # OPEN GATE
+            # ----------------------------------------------
+            #
+            # The gate opens after detecting the car.
+            #
+
+            if assigned is not None:
+
+                open_gate()
 
 
     # ======================================================
-    # CHECK 30-SECOND TIMER
+    # GATE TIMER
     # ======================================================
 
     if gate_is_open:
 
-        # Safety check
+
         if gate_open_time is None:
 
             gate_open_time = time()
 
 
-        # Calculate how long gate has been open
         elapsed = (
             time() -
             gate_open_time
@@ -688,12 +1018,57 @@ def update_gate():
 
 
         # --------------------------------------------------
-        # CLOSE AFTER 30 SECONDS
+        # CLOSE GATE AFTER DELAY
         # --------------------------------------------------
 
         if elapsed >= GATE_CLOSE_DELAY:
 
             close_gate()
+
+
+# ==========================================================
+# RESET INCOMING VEHICLE DETECTION
+# ==========================================================
+#
+# Once the vehicle leaves the main-gate sensor,
+# allow the next vehicle to be treated as a new
+# incoming vehicle.
+#
+# IMPORTANT:
+# This does NOT remove the parking-slot assignment.
+#
+# The assignment remains reserved until the car reaches
+# the assigned parking slot.
+#
+
+
+def update_incoming_vehicle_state():
+
+    global incoming_car_assigned
+
+
+    if (
+        gate_distance >
+        GATE_DETECT_DISTANCE
+    ):
+
+        # The incoming vehicle has cleared
+        # the main gate sensor.
+        #
+        # If its parking slot has not yet been reached,
+        # keep the reservation.
+        #
+        # Only reset the detection flag so another car
+        # can be detected later.
+
+        if (
+            slot1_car_present
+            or
+            slot2_car_present
+        ):
+
+            # Nothing required here.
+            pass
 
 
 # ==========================================================
@@ -705,15 +1080,16 @@ def update_warning_lights():
     global last_blink_time
     global blink_state
 
+
     current_time = time()
 
 
-    # Check blink interval
     if (
         current_time -
         last_blink_time
         >= BLINK_INTERVAL
     ):
+
 
         last_blink_time = current_time
 
@@ -734,9 +1110,11 @@ def update_warning_lights():
 
                 SLOT1_RED.off()
 
+
         elif slot1_state == "PARKED":
 
             SLOT1_RED.on()
+
 
         else:
 
@@ -757,9 +1135,11 @@ def update_warning_lights():
 
                 SLOT2_RED.off()
 
+
         elif slot2_state == "PARKED":
 
             SLOT2_RED.on()
+
 
         else:
 
@@ -776,10 +1156,12 @@ def display_slot1():
 
     print("-" * 62)
 
+
     print(
         f"Distance          : "
         f"{slot1_distance:6.2f} cm"
     )
+
 
     print(
         f"Status            : "
@@ -787,25 +1169,65 @@ def display_slot1():
     )
 
 
+    # ------------------------------------------------------
+    # RESERVED
+    # ------------------------------------------------------
+
+    if slot1_reserved:
+
+        print(
+            "Assignment        : "
+            "RESERVED"
+        )
+
+
+    elif slot1_car_present:
+
+        print(
+            "Assignment        : "
+            "OCCUPIED"
+        )
+
+
+    else:
+
+        print(
+            "Assignment        : "
+            "FREE"
+        )
+
+
+    # ------------------------------------------------------
+    # PARKING TIME
+    # ------------------------------------------------------
+
     if slot1_car_present:
 
-        minutes = get_parking_minutes(
-            slot1_start_time
+        minutes = (
+            get_parking_minutes(
+                slot1_start_time
+            )
         )
 
-        charge = get_current_charge(
-            slot1_start_time
+
+        charge = (
+            get_current_charge(
+                slot1_start_time
+            )
         )
+
 
         print(
             f"Parking time      : "
             f"{minutes:6.2f} minutes"
         )
 
+
         print(
             f"Current charge    : "
             f"GH₵{charge:6.2f}"
         )
+
 
     else:
 
@@ -813,8 +1235,10 @@ def display_slot1():
             "Parking time      : --"
         )
 
+
         print(
-            "Current charge    : GH₵0.00"
+            "Current charge    : "
+            "GH₵0.00"
         )
 
 
@@ -828,10 +1252,12 @@ def display_slot2():
 
     print("-" * 62)
 
+
     print(
         f"Distance          : "
         f"{slot2_distance:6.2f} cm"
     )
+
 
     print(
         f"Status            : "
@@ -839,25 +1265,65 @@ def display_slot2():
     )
 
 
+    # ------------------------------------------------------
+    # RESERVED
+    # ------------------------------------------------------
+
+    if slot2_reserved:
+
+        print(
+            "Assignment        : "
+            "RESERVED"
+        )
+
+
+    elif slot2_car_present:
+
+        print(
+            "Assignment        : "
+            "OCCUPIED"
+        )
+
+
+    else:
+
+        print(
+            "Assignment        : "
+            "FREE"
+        )
+
+
+    # ------------------------------------------------------
+    # PARKING TIME
+    # ------------------------------------------------------
+
     if slot2_car_present:
 
-        minutes = get_parking_minutes(
-            slot2_start_time
+        minutes = (
+            get_parking_minutes(
+                slot2_start_time
+            )
         )
 
-        charge = get_current_charge(
-            slot2_start_time
+
+        charge = (
+            get_current_charge(
+                slot2_start_time
+            )
         )
+
 
         print(
             f"Parking time      : "
             f"{minutes:6.2f} minutes"
         )
 
+
         print(
             f"Current charge    : "
             f"GH₵{charge:6.2f}"
         )
+
 
     else:
 
@@ -865,8 +1331,10 @@ def display_slot2():
             "Parking time      : --"
         )
 
+
         print(
-            "Current charge    : GH₵0.00"
+            "Current charge    : "
+            "GH₵0.00"
         )
 
 
@@ -894,7 +1362,9 @@ def display_dashboard():
     # PARKING AVAILABILITY
     # ======================================================
 
-    free_slots = available_slot_count()
+    free_slots = (
+        available_slot_count()
+    )
 
 
     if free_slots > 0:
@@ -910,15 +1380,44 @@ def display_dashboard():
 
     print("-" * 62)
 
+
     print(
         f"Status            : "
         f"{parking_status}"
     )
 
+
     print(
         f"Free slots        : "
         f"{free_slots} / 2"
     )
+
+
+    print()
+
+
+    # ======================================================
+    # CURRENT INCOMING ASSIGNMENT
+    # ======================================================
+
+    print("INCOMING VEHICLE")
+
+    print("-" * 62)
+
+
+    if assigned_slot is not None:
+
+        print(
+            f"Assigned slot     : "
+            f"SLOT {assigned_slot}"
+        )
+
+    else:
+
+        print(
+            "Assigned slot     : NONE"
+        )
+
 
     print()
 
@@ -946,6 +1445,7 @@ def display_dashboard():
         f"{gate_status}"
     )
 
+
     print(
         f"Distance          : "
         f"{gate_distance:6.2f} cm"
@@ -965,16 +1465,19 @@ def display_dashboard():
                 gate_open_time
             )
 
+
             remaining = max(
                 0,
                 GATE_CLOSE_DELAY -
                 elapsed
             )
 
+
             print(
                 f"Gate closes in    : "
                 f"{remaining:5.0f} seconds"
             )
+
 
     else:
 
@@ -987,12 +1490,16 @@ def display_dashboard():
     # GATE MESSAGE
     # ======================================================
 
-    if gate_distance <= GATE_DETECT_DISTANCE:
+    if (
+        gate_distance <=
+        GATE_DETECT_DISTANCE
+    ):
 
         print(
             "Gate message      : "
             "CAR DETECTED"
         )
+
 
     elif gate_is_open:
 
@@ -1000,6 +1507,7 @@ def display_dashboard():
             "Gate message      : "
             "GATE OPEN"
         )
+
 
     else:
 
@@ -1018,6 +1526,7 @@ def display_dashboard():
 
     display_slot1()
 
+
     print()
 
 
@@ -1026,6 +1535,7 @@ def display_dashboard():
     # ======================================================
 
     display_slot2()
+
 
     print()
 
@@ -1036,20 +1546,24 @@ def display_dashboard():
 
     print("-" * 62)
 
+
     print(
         f"Parking rate      : "
         f"GH₵{RATE_PER_MINUTE:.2f} / minute"
     )
+
 
     print(
         f"Gate open time    : "
         f"{GATE_CLOSE_DELAY} seconds"
     )
 
+
     print(
         f"Gate detection    : "
         f"{GATE_DETECT_DISTANCE} cm"
     )
+
 
     print()
 
@@ -1062,21 +1576,26 @@ def display_dashboard():
 
     print("-" * 62)
 
+
     print(
         "GREEN      = Car detected"
     )
+
 
     print(
         "RED        = Parked"
     )
 
+
     print(
         "RED BLINK  = Car too close"
     )
 
+
     print(
         "BUZZER     = Too-close warning"
     )
+
 
     print()
 
@@ -1106,6 +1625,7 @@ print(
 print("=" * 62)
 
 print()
+
 
 print("Initializing system...")
 
@@ -1162,10 +1682,12 @@ print(
     f"GH₵{RATE_PER_MINUTE:.2f} / minute"
 )
 
+
 print(
     f"Gate open time: "
     f"{GATE_CLOSE_DELAY} seconds"
 )
+
 
 print()
 
@@ -1181,6 +1703,7 @@ print()
 try:
 
     while True:
+
 
         # ----------------------------------------------
         # UPDATE SLOT 1
@@ -1211,7 +1734,7 @@ try:
 
 
         # ----------------------------------------------
-        # DISPLAY DASHBOARD
+        # UPDATE DASHBOARD
         # ----------------------------------------------
 
         display_dashboard()
@@ -1243,6 +1766,7 @@ except KeyboardInterrupt:
 
 finally:
 
+
     # ------------------------------------------------------
     # SLOT 1
     # ------------------------------------------------------
@@ -1268,11 +1792,10 @@ finally:
     # ------------------------------------------------------
     # SERVO
     # ------------------------------------------------------
-    #
-    # No servo command is sent here.
-    #
-    # The SG90 remains in its current position.
-    #
+
+    # No servo command here.
+    # Servo remains at its current position.
+
 
     print()
 
